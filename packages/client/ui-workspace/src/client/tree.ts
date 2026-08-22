@@ -1,7 +1,7 @@
 /**
  * Derives the workspace browser tree from Host Workspace order and membership.
- * Unassigned Sessions trail under Ungrouped; only the selected blank Session
- * remains visible.
+ * Unassigned Sessions trail under Ungrouped; archived Sessions trail in the
+ * dedicated archived section; only the selected blank Session remains visible.
  */
 import {
   indexSubagentDescendants, type PendingInteractionStatus, type SessionId, type SessionListState,
@@ -11,6 +11,9 @@ import {
 
 /** Group key for Sessions outside every Workspace. */
 export const UNGROUPED_KEY = ''
+
+/** Group key of the trailing archived section (never collides with workspace uuids or the ungrouped key). */
+export const ARCHIVED_GROUP_KEY = '__archived__'
 
 /** Display label for the ungrouped bucket row. */
 export const UNGROUPED_LABEL = 'Ungrouped'
@@ -39,8 +42,10 @@ export type SessionOrderBy = 'manual' | 'updated'
 export interface GroupNode {
   /** Group key: the workspace id or {@link UNGROUPED_KEY}. */
   key: string
-  /** Backing Workspace id; absent only for the ungrouped bucket. */
+  /** Backing Workspace id; absent for the ungrouped bucket and the archived section. */
   workspaceId: WorkspaceId | undefined
+  /** The trailing archived section (no backing Workspace, no workspace actions). */
+  archived?: boolean
   cwd: string | undefined
   /** Workspace creation time (epoch ms); absent only for the ungrouped bucket. */
   createdAt: number | undefined
@@ -228,12 +233,38 @@ function sessionNode(
 }
 
 /**
+ * Archived session rows: top-level sessions in the registry-global archive
+ * set, newest-first. Subagent-origin sessions stay hidden (they are only
+ * ever shown under their parent's lineage, which hides archived members),
+ * and blank placeholders are excluded like everywhere else.
+ * @param list - sessions list snapshot.
+ * @param archivedSessionIds - registry-global archive set.
+ * @returns archived rows in recency order.
+ */
+export function archivedSessionRows(
+  list: SessionListState,
+  archivedSessionIds: readonly SessionId[],
+): SessionNode[] {
+  const archived = new Set(archivedSessionIds)
+  const descendants = indexSubagentDescendants(list.byId)
+  const rows: SessionSummary[] = []
+  for (const id of list.ids) {
+    const s = list.byId[id]
+    if (s === undefined || s.origin === 'subagent' || !archived.has(s.id)) continue
+    rows.push(s)
+  }
+  rows.sort(byRecency)
+  return rows.map(session => sessionNode(session, descendants))
+}
+
+/**
  * Derive the workspace browser groups with every session as a top-level row.
  *
  * Every group shows; sessions populate under expanded groups in the selected
  * local order. Blank sessions are excluded except for the selected
- * provisional New Session row; archived sessions are excluded everywhere.
- * Content search lives outside this derivation
+ * provisional New Session row; archived sessions are excluded everywhere and
+ * trail in the dedicated archived section (their only surface, where the
+ * unarchive action lives). Content search lives outside this derivation
  * (see {@link deriveSearchResults}).
  * @param list - sessions list snapshot (`current` feeds containsCurrent).
  * @param workspaces - real workspaces in stable Host order.
@@ -267,6 +298,24 @@ export function deriveGroups(
       expanded,
       containsCurrent: g.key === currentGroup,
       sessions: expanded ? g.sessions.map(session => sessionNode(session, descendants)) : [],
+    })
+  }
+  const archivedRows = archivedSessionRows(list, archivedSessionIds)
+  if (archivedRows.length > 0) {
+    const expanded = expandedGroups.has(ARCHIVED_GROUP_KEY)
+    groups.push({
+      key: ARCHIVED_GROUP_KEY,
+      workspaceId: undefined,
+      cwd: undefined,
+      createdAt: undefined,
+      archived: true,
+      label: 'Archived',
+      sessionCount: archivedRows.length,
+      expanded,
+      // The projection sweep clears an archived current selection, so the
+      // archived section can never contain the selected session.
+      containsCurrent: false,
+      sessions: expanded ? archivedRows : [],
     })
   }
   return groups
