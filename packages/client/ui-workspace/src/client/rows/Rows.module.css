@@ -24,6 +24,10 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.sessionRow.selected .title {
+  font-weight: 600;
+}
+
 .searchResultRow {
   display: flex;
   flex-direction: column;
@@ -115,6 +119,11 @@
 
 .sessionRow .title {
   margin: 0 6px 0 4px;
+}
+
+.sessionRow .runningTitle {
+  color: var(--dsw-alias-state-business-primary);
+  font-weight: 600;
 }
 
 .flatSessionRowWithoutStatus .title {
