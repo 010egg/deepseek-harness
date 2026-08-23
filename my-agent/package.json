@@ -1,0 +1,24 @@
+{
+  "name": "my-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:cordis": "tsc -p src/cordis/tsconfig.build.json",
+    "prestart": "npm run build:cordis",
+    "start": "tsx src/cli.ts",
+    "prereplay": "npm run build:cordis",
+    "replay": "tsx src/cli.ts --replay",
+    "pretypecheck": "npm run build:cordis",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@standard-schema/spec": "^1.1.0",
+    "cosmokit": "^1.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
