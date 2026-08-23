@@ -102,15 +102,20 @@ describe('web e2e: settings modal and General preferences', () => {
     await dialog.getByRole('button', { name: '插件', exact: true }).click()
     await dialog.getByRole('heading', { name: '插件', exact: true }).waitFor({ timeout: 10_000 })
     await dialog.getByRole('tab', { name: '插件列表', exact: true }).click()
-    const pluginRow = dialog.locator(PLUGIN_ROW_SELECTOR)
-    await pluginRow.waitFor({ timeout: 10_000 })
     const expectedPluginCount = [...scaffold.ctx.loader.entries()]
       .filter(entry => !entry.options.group)
       .length
     expect(await dialog.getByRole('searchbox', { name: '搜索插件' }).count()).toBe(1)
-    expect(await dialog.locator('[data-plugin-entry]').count()).toBe(expectedPluginCount)
     expect(await dialog.locator('[data-plugin-count]').getAttribute('data-plugin-count'))
       .toBe(String(expectedPluginCount))
+    // The inventory renders as collapsible category folders that start closed;
+    // the shipped composition always contains the Browser UI folder owning
+    // ui-settings, which opens to reveal the row captured below.
+    expect(await dialog.locator('[data-plugin-category="browser"]').count()).toBe(1)
+    await dialog.locator('[data-plugin-category="browser"]').click()
+    const pluginRow = dialog.locator(PLUGIN_ROW_SELECTOR)
+    await pluginRow.waitFor({ timeout: 10_000 })
+    expect(await dialog.locator('[data-plugin-entry]').count()).toBeGreaterThan(0)
     expect(await dialog.getByRole('button', { name: '插件', exact: true }).getAttribute('aria-current')).toBe('true')
     expect(await dialog.getByRole('tab', { name: '插件列表', exact: true }).getAttribute('aria-selected')).toBe('true')
     expect(await dialog.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBeNull()

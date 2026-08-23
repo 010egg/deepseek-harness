@@ -12,7 +12,7 @@ Status: implemented
 
 `@deepseek-ai/dsh-client-ui-settings-plugins` 拥有唯一一个 id 为 `plugins` 的 `settings.section` 贡献。它渲染共享标题和紧凑标签栏，声明根级列表 slot `settings.plugins.tab`，并把该记录中的 id、order 与跟随语言的 label 投影成标签页。该 slot 的规范类型位于 `ui-settings`，因此标签页贡献方依赖设置领域约定，而不是依赖另一个功能插件。
 
-分区拥有方贡献 `configurable` 标签页，由它声明既有的嵌套 `settings.plugin.item` 列表。配置卡片原有的命名空间绑定、草稿状态、校验与写入均保持不变。`@deepseek-ai/dsh-client-ui-settings-plugin-inventory` 向 `settings.plugins.tab` 贡献 `all` 标签页；它的 Host Loader 观察器、生成的 Remote 命名空间、DTO 与搜索语义保持不变。已停用的清单条目会在摘要和详情中省略重复的“未挂载”运行状态，已启用条目仍显示其 Cordis 阶段。
+分区拥有方贡献 `configurable` 标签页，由它声明既有的嵌套 `settings.plugin.item` 列表。配置卡片原有的命名空间绑定、草稿状态、校验与写入均保持不变。`@deepseek-ai/dsh-client-ui-settings-plugin-inventory` 向 `settings.plugins.tab` 贡献 `all` 标签页；它的 Host Loader 观察器、生成的 Remote 命名空间与 DTO 保持不变。清单标签页把只读条目渲染为可折叠的分类文件夹（Agent 与模型、工具与自动化、执行与权限、会话与数据、Web 服务、浏览器界面、系统基础与其他插件），默认全部收起，因此折叠视图占用很小：精确的客户端自有目录把内置模块标识映射到分类，未知或自定义模块落入**其他插件**；文件夹顺序固定，文件夹内条目保持 Loader 顺序。打开文件夹后显示单列的紧凑文件行（插件图标、模块短名称、启停标签与根 fiber 状态点）。输入搜索词会自动展开所有有匹配的文件夹，过滤后的条目无需手动点击文件夹即可触达。搜索语义保持不变，仍匹配模块标识与 Loader 条目 id。已停用的清单条目会在摘要和详情中省略重复的“未挂载”运行状态，已启用条目仍显示其 Cordis 阶段。
 
 默认选择顺序中的第一个标签页。某个标签页只有首次被选择时才挂载，之后在“插件”分区保持挂载期间只隐藏而不卸载。这样会把清单 RPC 延迟到用户打开**插件列表**时，并在切换标签页时保留草稿、搜索文本、折叠状态和已读取的快照。关闭 Settings 会卸载该分区，因此再次打开后，重新选择该标签页时会取得新的清单快照。
 

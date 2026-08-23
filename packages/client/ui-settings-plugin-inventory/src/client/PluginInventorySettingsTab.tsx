@@ -2,9 +2,18 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconChevronDownOutline14,
+  IconCordisPluginOutline14,
+  IconFolderClose16,
+  IconFolderOpen16,
   IconSearchOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import {
+  PLUGIN_CATEGORY_ORDER,
+  pluginCategoryCopy,
+  pluginCategoryOf,
+  type PluginCategory,
+} from './catalog.ts'
 import type { PluginInventoryLocaleKey } from './locales.ts'
 import css from './PluginInventorySettingsTab.module.css'
 
@@ -60,12 +69,13 @@ function matches(entry: PluginInventoryEntry, normalizedQuery: string): boolean 
     .some(value => value.toLocaleLowerCase().includes(normalizedQuery))
 }
 
-/** Render the read-only current Loader inventory. */
+/** Render the read-only current Loader inventory as collapsible category folders. */
 export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsTabProps): ReactNode {
   const catalogId = useId()
   const [request, setRequest] = useState(0)
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<PluginInventoryEntry['entryId'] | null>(null)
+  const [expandedCategories, setExpandedCategories] = useState<ReadonlySet<PluginCategory>>(() => new Set())
   const [state, setState] = useState<ViewState>({ status: 'loading' })
 
   useEffect(() => {
@@ -83,6 +93,15 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
       ? state.snapshot.entries.filter(entry => matches(entry, normalizedQuery))
       : [],
     [normalizedQuery, state],
+  )
+  const groups = useMemo(
+    () => PLUGIN_CATEGORY_ORDER
+      .map(category => ({
+        category,
+        entries: filteredEntries.filter(entry => pluginCategoryOf(entry.moduleName) === category),
+      }))
+      .filter(group => group.entries.length > 0),
+    [filteredEntries],
   )
 
   useEffect(() => {
@@ -127,62 +146,105 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
             ? <p className={css.status}>{t('emptySearch')}</p>
             : null}
           {filteredEntries.length > 0 ? (
-            <ul className={css.cards}>
-              {filteredEntries.map((entry) => {
-                const status = phaseLabel(entry.fiberPhase, t)
-                const title = moduleShortName(entry.moduleName)
-                const configuration = t(entry.enabled ? 'enabledTag' : 'disabledTag')
-                const open = expanded === entry.entryId
-                const detailId = `${catalogId}-details-${encodeURIComponent(entry.entryId)}`
+            <ul className={css.folders}>
+              {groups.map((group) => {
+                const [headingKey, descriptionKey] = pluginCategoryCopy(group.category)
+                const searching = normalizedQuery.length > 0
+                const folderOpen = searching || expandedCategories.has(group.category)
+                const folderBodyId = `${catalogId}-folder-${group.category}`
                 return (
-                  <li
-                    className={css.card}
-                    key={entry.entryId}
-                    data-plugin-entry={entry.entryId}
-                    data-open={open ? 'true' : undefined}
-                  >
+                  <li className={css.folder} key={group.category}>
                     <button
-                      className={css.cardContent}
+                      className={css.folderRow}
                       type="button"
-                      aria-expanded={open}
-                      aria-controls={detailId}
-                      aria-label={entry.enabled ? `${title}, ${status}, ${configuration}` : `${title}, ${configuration}`}
+                      aria-expanded={folderOpen}
+                      aria-controls={folderBodyId}
+                      data-plugin-category={group.category}
                       onClick={() => {
-                        setExpanded(current => current === entry.entryId ? null : entry.entryId)
+                        setExpandedCategories((current) => {
+                          const next = new Set(current)
+                          if (next.has(group.category)) {
+                            next.delete(group.category)
+                          } else {
+                            next.add(group.category)
+                          }
+                          return next
+                        })
                       }}
                     >
-                      <strong className={css.cardTitle} title={entry.moduleName}>{title}</strong>
-                      <span className={css.cardTrailing}>
-                        {entry.enabled ? (
-                          <span
-                            className={css.statusDot}
-                            data-phase={entry.fiberPhase ?? 'unobserved'}
-                            role="img"
-                            aria-label={status}
-                            title={status}
-                          />
-                        ) : null}
-                        <span className={css.configTag} data-enabled={entry.enabled ? 'true' : 'false'}>
-                          {configuration}
-                        </span>
-                        <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
-                      </span>
+                      {folderOpen
+                        ? <IconFolderOpen16 className={css.folderIcon} size={16} aria-hidden="true" />
+                        : <IconFolderClose16 className={css.folderIcon} size={16} aria-hidden="true" />}
+                      <span className={css.folderTitle}>{t(headingKey)}</span>
+                      <span className={css.groupCount}>{group.entries.length}</span>
+                      <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
                     </button>
-                    {open ? (
-                      <div className={css.cardDetails} id={detailId}>
-                        <code className={css.entryValue} data-loader-entry>{entry.entryId}</code>
-                        <dl className={css.details}>
-                          <div>
-                            <dt>{t('configuration')}</dt>
-                            <dd>{configuration}</dd>
-                          </div>
-                          {entry.enabled ? (
-                            <div>
-                              <dt>{t('cordis')}</dt>
-                              <dd>{status}</dd>
-                            </div>
-                          ) : null}
-                        </dl>
+                    {folderOpen ? (
+                      <div className={css.folderBody} id={folderBodyId}>
+                        <p className={css.groupDescription}>{t(descriptionKey)}</p>
+                        <ul className={css.cards}>
+                          {group.entries.map((entry) => {
+                            const status = phaseLabel(entry.fiberPhase, t)
+                            const title = moduleShortName(entry.moduleName)
+                            const configuration = t(entry.enabled ? 'enabledTag' : 'disabledTag')
+                            const open = expanded === entry.entryId
+                            const detailId = `${catalogId}-details-${encodeURIComponent(entry.entryId)}`
+                            return (
+                              <li
+                                className={css.card}
+                                key={entry.entryId}
+                                data-plugin-entry={entry.entryId}
+                                data-open={open ? 'true' : undefined}
+                              >
+                                <button
+                                  className={css.cardContent}
+                                  type="button"
+                                  aria-expanded={open}
+                                  aria-controls={detailId}
+                                  aria-label={entry.enabled ? `${title}, ${status}, ${configuration}` : `${title}, ${configuration}`}
+                                  onClick={() => {
+                                    setExpanded(current => current === entry.entryId ? null : entry.entryId)
+                                  }}
+                                >
+                                  <IconCordisPluginOutline14 className={css.fileIcon} size={14} aria-hidden="true" />
+                                  <strong className={css.cardTitle} title={entry.moduleName}>{title}</strong>
+                                  <span className={css.cardTrailing}>
+                                    {entry.enabled ? (
+                                      <span
+                                        className={css.statusDot}
+                                        data-phase={entry.fiberPhase ?? 'unobserved'}
+                                        role="img"
+                                        aria-label={status}
+                                        title={status}
+                                      />
+                                    ) : null}
+                                    <span className={css.configTag} data-enabled={entry.enabled ? 'true' : 'false'}>
+                                      {configuration}
+                                    </span>
+                                    <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                                  </span>
+                                </button>
+                                {open ? (
+                                  <div className={css.cardDetails} id={detailId}>
+                                    <code className={css.entryValue} data-loader-entry>{entry.entryId}</code>
+                                    <dl className={css.details}>
+                                      <div>
+                                        <dt>{t('configuration')}</dt>
+                                        <dd>{configuration}</dd>
+                                      </div>
+                                      {entry.enabled ? (
+                                        <div>
+                                          <dt>{t('cordis')}</dt>
+                                          <dd>{status}</dd>
+                                        </div>
+                                      ) : null}
+                                    </dl>
+                                  </div>
+                                ) : null}
+                              </li>
+                            )
+                          })}
+                        </ul>
                       </div>
                     ) : null}
                   </li>

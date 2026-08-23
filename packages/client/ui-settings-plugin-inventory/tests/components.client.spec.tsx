@@ -33,7 +33,7 @@ const SNAPSHOT = {
 } as unknown as Snapshot
 
 describe('PluginInventorySettingsTab', () => {
-  it('renders runtime status only for enabled plugins', async () => {
+  it('renders collapsible category folders and runtime status only inside opened folders', async () => {
     const deferred = Promise.withResolvers<Snapshot>()
     const list = vi.fn(() => deferred.promise)
     const view = render(<PluginInventorySettingsTab {...props(list)} />)
@@ -44,11 +44,21 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.getByRole('searchbox', { name: en.search })).toBeTruthy()
     expect(screen.getByRole('heading', { name: en.catalog })).toBeTruthy()
     expect(view.container.querySelector('[data-plugin-count]')?.textContent).toBe('7')
-    expect(screen.getAllByRole('listitem')).toHaveLength(7)
-    expect(screen.getAllByText(en.enabledTag)).toHaveLength(6)
+    // Folders are collapsed by default: the two populated categories show
+    // their folder rows, and no plugin card is visible yet.
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: /System foundation/ }).getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByRole('button', { name: /Other plugins/ }).getAttribute('aria-expanded')).toBe('false')
+    expect(view.container.querySelector('[data-plugin-category="system"]')).toBeTruthy()
+    expect(view.container.querySelector('[data-plugin-category="other"]')).toBeTruthy()
+    expect(screen.queryAllByText(en.enabledTag)).toHaveLength(0)
+
+    // Open the Other folder: every fixture card renders with its status.
+    fireEvent.click(screen.getByRole('button', { name: /Other plugins/ }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(8)
+    expect(screen.getAllByText(en.enabledTag)).toHaveLength(5)
     expect(screen.getByText(en.disabledTag)).toBeTruthy()
     for (const value of [
-      'Mounted',
       'Waiting for dependencies',
       'Loading',
       'Mount failed',
@@ -57,6 +67,14 @@ describe('PluginInventorySettingsTab', () => {
     ]) {
       expect(screen.getByRole('img', { name: value })).toBeTruthy()
     }
+    fireEvent.click(screen.getByRole('button', { name: 'directory-picker-native, Disabled' }))
+    expect(screen.getAllByText(en.disabledTag)).toHaveLength(2)
+    expect(screen.queryByText(en.cordis)).toBeNull()
+    expect(screen.queryByText(en.unobserved)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Other plugins/ }))
+
+    // Open the System folder: the built-in hmr card expands with its details.
+    fireEvent.click(screen.getByRole('button', { name: /System foundation/ }))
     const active = screen.getByRole('button', { name: 'hmr, Mounted, Enabled' })
     expect(active.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(active)
@@ -65,12 +83,18 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.getByText(en.configuration)).toBeTruthy()
     expect(screen.getByText(en.cordis)).toBeTruthy()
     fireEvent.click(active)
+    expect(active.getAttribute('aria-expanded')).toBe('false')
     expect(view.container.querySelector('[data-loader-entry]')).toBeNull()
-
     fireEvent.click(active)
+    expect(active.getAttribute('aria-expanded')).toBe('true')
+
+    // A search query forces matching folders open and drops the card whose
+    // expanded details no longer match, so cards appear without a manual
+    // folder click and stale disclosure state resets.
     fireEvent.change(screen.getByRole('searchbox', { name: en.search }), {
       target: { value: 'disabled-entry' },
     })
+    expect(screen.getByRole('button', { name: /Other plugins/ }).getAttribute('aria-expanded')).toBe('true')
     expect(view.container.querySelector('[data-loader-entry]')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'directory-picker-native, Disabled' }))
     expect(screen.getAllByText(en.disabledTag)).toHaveLength(2)
@@ -78,16 +102,16 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.queryByText(en.unobserved)).toBeNull()
   })
 
-  it('filters by module name or Loader entry id', async () => {
+  it('filters by module name or Loader entry id within auto-opened folders', async () => {
     render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT)} />)
     const search = await screen.findByRole('searchbox', { name: en.search })
 
     fireEvent.change(search, { target: { value: 'disabled-entry' } })
-    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
     expect(screen.getByText('directory-picker-native')).toBeTruthy()
 
     fireEvent.change(search, { target: { value: 'cordis-plugin-hmr' } })
-    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
     expect(screen.getByText('hmr')).toBeTruthy()
 
     fireEvent.change(search, { target: { value: 'not-a-plugin' } })
