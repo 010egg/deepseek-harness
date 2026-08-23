@@ -840,7 +840,7 @@ describe('sandbox escalation API (write/edit)', () => {
     const { ctx } = await setupConfining()
     for (const name of ['write', 'edit'] as const) {
       const props = fsSchema(ctx, name).parameters.properties
-      expect(props['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
+      expect(props['sandbox_permissions']?.enum).toEqual(['read-only', 'workspace-write', 'danger-full-access'])
       expect(props['justification']).toBeDefined()
     }
   })
@@ -915,9 +915,24 @@ describe('sandbox escalation API (write/edit)', () => {
 
   it('rejects the escalation argument pairing (one field without the other)', async () => {
     const { ctx } = await setupConfining()
-    const missing = await call(ctx, 'write', { file_path: 'a.txt', content: 'x', sandbox_permissions: 'workspace-write' }, escalationAgent())
+    const missing = await call(ctx, 'write', { file_path: 'a.txt', content: 'x', sandbox_permissions: 'danger-full-access' }, escalationAgent())
     expect(missing.isError).toBe(true)
     expect(text(missing)).toContain('sandbox_permissions requires a justification')
+  })
+
+  it('runs an equal-mode request without justification as an ordinary call', async () => {
+    const { ctx, fs } = await setupConfining()
+    const equal = await call(ctx, 'write', {
+      file_path: 'a.txt', content: 'x', sandbox_permissions: 'workspace-write',
+    }, escalationAgent())
+    expect(equal.isError).toBe(false)
+    expect(fs.stamped).toEqual([{ mode: 'workspace-write', workspaceRoot: resolve('/session-project') }])
+
+    // A wider request without justification still fails the pairing check.
+    const wider = await call(ctx, 'write', {
+      file_path: 'a.txt', content: 'x', sandbox_permissions: 'danger-full-access',
+    }, escalationAgent())
+    expect(text(wider)).toContain('sandbox_permissions requires a justification')
   })
 
   it('sandbox_permissions under a non-confining backend fails closed (unadvertised field still reaches execute)', async () => {

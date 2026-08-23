@@ -21,8 +21,8 @@
 | `timeoutMs` | number | 以毫秒为单位覆盖超时时间。执行器会应用其配置的默认值和上限。 |
 | `workdir` | string | 本次调用的工作目录。默认为调用方 agent（智能体）会话 cwd 的文件系统标识（`session.header.cwd`），使每个会话都在自己的工作区中运行；相对 `workdir` 也以同一标识为基准解析。 |
 | `run_in_background` | boolean | 立即返回 job id；不应用超时。 |
-| `sandbox_permissions` | string enum | 仅当已挂载的执行器启用沙箱时才会公开（`ctx.shell.sandboxMode` 报告一个具有限制作用的默认值）：被拒命令所需的更宽模式，取自封闭的目标词汇 `workspace-write`/`danger-full-access`（绝不能缩减为执行器默认值；有效模式按会话确定，执行时会基于它检查是否严格拓宽，未拓宽的请求直接失败，不会向任何人发起提示）。 |
-| `justification` | string | 必须与 `sandbox_permissions` 一同提供（缺少任一项都会产生验证错误）：用一句话向用户解释此命令为何需要这项更宽权限。 |
+| `sandbox_permissions` | string enum | 仅当已挂载的执行器启用沙箱时才会公开（`ctx.shell.sandboxMode` 报告一个具有限制作用的默认值）：本次调用的沙箱模式。策略归属方按请求把枚举收窄为会话的有效模式加严格更宽的重试——`read-only` 公布全部三种模式，`workspace-write` 公布 `workspace-write`/`danger-full-access`，`danger-full-access` 只公布自身。等于有效模式的请求是普通调用，无需批准即可运行；只有严格更宽的重试才在执行前解析批准，更窄或未知的请求不提示任何人即失败。 |
+| `justification` | string | 更宽重试时必须与 `sandbox_permissions` 一同提供；相等模式请求（常驻模式，即普通调用）不需要。用一句话向用户解释为何正是这条命令需要这项访问。 |
 
 执行前，`command`、`workdir` 和 `timeoutMs` 会通过 `ctx.shell.resolve()` 依据执行器配置默认值完成解析，因此 Service Definition（`ShellExecSpec`）收到显式的 `workdir`/`timeoutMs` 值。工具层会根据调用方 agent 的 `session.header.cwd` 应用工作目录默认值，然后才调用 `resolve()`：由于 N 个会话共享一个执行器，逐会话 cwd 必须来自 `exec.agent`；只有无法取得会话 cwd 时，执行器才回退到自身配置／`process.cwd()`。存在沙箱策略时，工具会复用已经规范化的 `workspaceRoot` 作为工作目录基准，防止限制逻辑与进程启动过程对同一个会话路径拼写产生不同解析结果。
 
@@ -48,7 +48,7 @@
 
 除非启用沙箱的执行器（[`dsh-bash-sandbox`](../bash-sandbox/)）限制命令，否则命令以执行器的完整权限运行。仅拒绝型沙箱会把拒绝作为结果事实报告，并在此渲染为拒绝标记；逐调用的允许／拒绝／询问策略由 `tools/pre-execute` waterfall（瀑布式事件）负责（参见 docs/architecture.md）。
 
-需要升权的 bash 调用会在执行前解析 `ctx.approval`。`allowed-once` 只对该次调用应用请求模式；审批被拒、取消、不可用或缺少审批上下文时，命令完全不会执行，并返回不同的错误。发生真实拒绝后，模型可以在同一轮次中使用满足需要的最窄模式和理由重试同一命令一次；审批提示本身就是征求同意的步骤。升权绝不能预先推测，禁用或拒绝审批即为最终结果。其理由见 [沙箱 Agent Note](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.zh.md)。
+需要升权的 bash 重试会在执行前解析 `ctx.approval`；`sandbox_permissions` 等于会话有效模式的请求是普通调用，绝不提示（相等值之所以存在，是因为某些提供方 schema 方言要求已公布属性）。`allowed-once` 只对该次调用应用请求模式；审批被拒、取消、不可用或缺少审批上下文时，命令完全不会执行，并返回不同的错误。发生真实拒绝后，模型可以在同一轮次中使用满足需要的最窄模式和理由重试同一命令一次；审批提示本身就是征求同意的步骤。升权绝不能预先推测，禁用或拒绝审批即为最终结果。其理由见 [沙箱 Agent Note](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.zh.md)。
 
 ## 逐会话模式切换
 
@@ -80,7 +80,7 @@ Check the [exit code: N] marker on every bash result; investigate failures befor
 
 #### 模型看到的内容
 
-模型会看到生成的 [`bash` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-bash)。仅当此生产方启用 `run_in_background` 时，该字段才会出现；仅当已挂载执行器声明支持沙箱时，`sandbox_permissions` 和 `justification` 才会出现。Agent 作用域的工具限制可以移除该 agent 的定义。
+模型会看到生成的 [`bash` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-bash)。仅当此生产方启用 `run_in_background` 时，该字段才会出现；仅当已挂载执行器声明支持沙箱时，`sandbox_permissions` 和 `justification` 才会出现。策略归属方会在每次请求时把 `sandbox_permissions` 枚举收窄为会话有效模式加严格更宽的模式。Agent 作用域的工具限制可以移除该 agent 的定义。
 
 #### Token 影响
 

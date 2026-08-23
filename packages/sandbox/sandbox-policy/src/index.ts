@@ -22,9 +22,9 @@ import { resolve as resolvePath } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
-import { canonicalPath, type SandboxExecutionPolicy, type SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import { canonicalPath, WIDER_MODES, type SandboxExecutionPolicy, type SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type { Session } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import { effectiveSandboxMode } from './session-mode.ts'
 
 export { SANDBOX_MODES, effectiveSandboxMode, setSandboxMode } from './session-mode.ts'
@@ -48,6 +48,25 @@ function renderPolicyContext(policy: SandboxExecutionPolicy): string {
       const mode: never = policy.mode
       throw new Error(`unreachable sandbox mode: ${String(mode)}`)
     }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Expose the standing mode for ordinary calls plus its strictly wider retries. */
+function projectEscalationSchemas(assembly: PromptAssembly, mode: SandboxMode): void {
+  const targets = [mode, ...(WIDER_MODES[mode] ?? [])]
+  for (const tool of assembly.tools) {
+    const properties = tool.parameters['properties']
+    if (!isRecord(properties)) continue
+    const permissions = properties['sandbox_permissions']
+    const justification = properties['justification']
+    if (!isRecord(permissions) || permissions['type'] !== 'string'
+      || !isRecord(justification) || justification['type'] !== 'string') continue
+
+    permissions['enum'] = targets
   }
 }
 
@@ -120,6 +139,14 @@ export class SandboxPolicyService extends Service {
             : renderPolicyContext(this.resolve({ session }))
         },
       })
+      scope.on('system-prompt/assemble', async (_assembly, context, next) => {
+        const assembled = await next()
+        const session = context.agent?.session
+        if (session !== undefined) {
+          projectEscalationSchemas(assembled, this.resolve({ session }).mode)
+        }
+        return assembled
+      }, { prepend: true })
     })
   }
 

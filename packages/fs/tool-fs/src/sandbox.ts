@@ -1,6 +1,6 @@
 /**
  * The sandbox-escalation API shared by the `write` and `edit` tools: the
- * per-call policy resolution, the advertised escalation fields, and the denial-marker
+ * per-call policy resolution, the advertised sandbox fields, and the denial-marker
  * mapping — all delegating the vocabulary and the fail-closed approval
  * sequence to `@deepseek-ai/dsh-sandbox` (the same pieces `@deepseek-ai/dsh-tool-bash`
  * uses), so bash and fs escalate identically. Built ONCE per plugin from
@@ -17,7 +17,7 @@ import { ESCALATION_TARGETS, approveEscalation, escalationHintMarker, sandboxDen
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { FsError } from '@deepseek-ai/dsh-fs'
 
-/** The two escalation arguments a mutating tool may carry (advertised only under a confining backend). */
+/** The two sandbox-mode arguments a mutating tool may carry (advertised only under a confining backend). */
 export interface FsEscalationArgs {
   sandbox_permissions?: string
   justification?: string
@@ -52,8 +52,8 @@ export class FsSandboxController {
   /**
    * The escalation schema fields for a mutating tool's `parameters`. Call it
    * only under a confining backend (guard on {@link escalationModes}); the
-   * enum pins the closed target vocabulary, the strict-wider check happens per
-   * call at execution.
+   * enum pins the closed request vocabulary; policy assembly narrows it to the
+   * current mode and wider targets for each agent request.
    * @returns the two escalation parameter specs.
    */
   schemaFields(): EscalationSchemaFields {
@@ -61,23 +61,23 @@ export class FsSandboxController {
       sandbox_permissions: {
         type: 'string',
         enum: [...this.escalationModes],
-        description: 'The wider sandbox mode this file operation needs. Only valid as a one-shot retry '
-          + 'of an operation the sandbox just denied; requires justification and user approval.',
+        description: 'Sandbox mode for this call. Use the current standing mode only when the schema '
+          + 'requires a value; use a wider mode only for a one-shot retry of an operation the sandbox just denied.',
       },
       justification: {
         type: 'string',
-        description: 'Required with sandbox_permissions: one sentence for the user explaining '
-          + 'why this exact file operation needs the wider access.',
+        description: 'Required with sandbox_permissions. For a wider retry, explain in one sentence '
+          + 'why this exact file operation needs the access.',
       },
     }
   }
 
   /**
-   * The policy to stamp onto this mutation: an approved escalation grant (a
-   * strictly wider retry resolved through `ctx.approval` before anything
-   * executes), else the session's standing mode. The calling session's cwd is
+   * The policy to stamp onto this mutation: the requested standing mode, an
+   * approved wider retry resolved through `ctx.approval` before anything
+   * executes, or the standing policy when no mode argument is present. The calling session's cwd is
    * always carried as the workspace root. Validates the escalation argument
-   * pairing first.
+   * pairing unless the request equals the standing mode.
    * @param toolName - the mutating tool's name, for the approval audit trail.
    * @param args - the call's escalation arguments.
    * @param exec - the tool-execution context (agent, callId, signal).
@@ -85,8 +85,14 @@ export class FsSandboxController {
    *   unsandboxed backend.
    */
   async resolvePolicy(toolName: string, args: FsEscalationArgs, exec: ToolExecution): Promise<SandboxExecutionPolicy | undefined> {
-    validateEscalationArgs(args.sandbox_permissions, args.justification)
     const standingPolicy = this.policy?.resolve({ ...exec.agent ? { session: exec.agent.session } : {} })
+    if (args.sandbox_permissions !== undefined && standingPolicy !== undefined
+      && args.sandbox_permissions === standingPolicy.mode) {
+      // Ordinary call: an equal-mode request under provider dialects that
+      // force advertised properties needs no justification or approval.
+      return standingPolicy
+    }
+    validateEscalationArgs(args.sandbox_permissions, args.justification)
     if (args.sandbox_permissions === undefined || args.justification === undefined) {
       return standingPolicy
     }

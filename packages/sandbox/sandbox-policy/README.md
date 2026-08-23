@@ -18,6 +18,7 @@ Filesystem tools, one-shot bash commands, and terminal sessions may enforce the 
 - `ctx.sandboxPolicy.resolve({ session?, mode? })` — resolves one complete per-call policy. An explicit approved mode outranks the session's last `sandbox/mode` event, which outranks `defaultMode`; the session's immutable `cwd` is canonicalized with filesystem semantics before becoming `workspaceRoot`, otherwise the configured fallback applies. Canonicalization precedes lexical normalization so `symlink/..` agrees with process working-directory resolution.
 - `ctx.sandboxPolicy.defaultMode` / `ctx.sandboxPolicy.workspaceRoot` — the deployment default and fallback root used by `resolve()`.
 - `sandbox:policy` — a request-time cache-safe context contribution derived directly from `resolve({ session })`. It states the mode's capability-neutral file-effect contract and the canonical session workspace under `workspace-write`; tool owners retain operation-specific denial and escalation guidance.
+- `system-prompt/assemble` projection — for each agent request, the `sandbox_permissions` enum of every tool advertising the paired escalation fields is narrowed to `[effectiveMode, ...WIDER_MODES[effectiveMode]]`, so the advertised choices can never contradict the executing policy (an equal request is an ordinary call; only strictly wider modes can escalate). Agentless catalogs and tools without the fields are unchanged.
 - `effectiveSandboxMode(events)` — the pure fold of a session's `sandbox/mode` events (the last switch wins, or `undefined`), used inside `resolve()`.
 - `setSandboxMode(session, mode)` — THE write path for a per-session override: appends exactly one `sandbox/mode` event. The switch IS its event; nothing mutates the mode out of band.
 - `SANDBOX_MODES` — every mode, for option advertisement and runtime validation.
@@ -34,7 +35,7 @@ A runtime switch is one log-only `sandbox/mode` event on the session it applies 
 
 #### What the model sees
 
-One `sandbox:policy` contribution in the current runtime-context snapshot for every agent session. It does not enumerate mounted capabilities. Tool plugins retain operation and escalation guidance, approval policy contributes separately to the same snapshot, and plan guidance remains `dsh-plan-mode`'s system section.
+One `sandbox:policy` contribution in the current runtime-context snapshot for every agent session. It does not enumerate mounted capabilities. Tool plugins retain operation and escalation guidance — with the `sandbox_permissions` enum narrowed per request to the effective mode plus strictly wider retries — approval policy contributes separately to the same snapshot, and plan guidance remains `dsh-plan-mode`'s system section.
 
 ##### Read-only
 

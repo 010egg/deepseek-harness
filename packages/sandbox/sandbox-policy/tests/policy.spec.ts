@@ -207,6 +207,157 @@ describe('sandbox:policy request context', () => {
   })
 })
 
+describe('sandbox escalation schema projection', () => {
+  async function schemaMounted(): Promise<Context> {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(SandboxPolicyService, {})
+    ctx.systemPrompt.tools(() => ({
+      schemas: [{
+        name: 'mutate',
+        description: 'test mutation',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            sandbox_permissions: {
+              type: 'string',
+              enum: ['read-only', 'workspace-write', 'danger-full-access'],
+            },
+            justification: { type: 'string' },
+          },
+          required: ['path'],
+          additionalProperties: false,
+        },
+      }, {
+        name: 'inspect',
+        description: 'test inspection',
+        parameters: {
+          type: 'object',
+          properties: { path: { type: 'string' } },
+          required: ['path'],
+          additionalProperties: false,
+        },
+      }],
+    }))
+    return ctx
+  }
+
+  function propertiesOf(ctx: Context, active: Session): Promise<Record<string, unknown>> {
+    return ctx.systemPrompt.assemble({ agent: agentFor(active) }).then((assembly) => {
+      const parameters = assembly.tools.find(tool => tool.name === 'mutate')?.parameters
+      return parameters?.['properties'] as Record<string, unknown>
+    })
+  }
+
+  it('advertises only escalation targets wider than the active session mode', async () => {
+    const ctx = await schemaMounted()
+    const active = session('sess-schema-targets')
+
+    const readOnly = await propertiesOf(ctx, active)
+    expect(readOnly['sandbox_permissions']).toMatchObject({
+      enum: ['read-only', 'workspace-write', 'danger-full-access'],
+    })
+    expect(readOnly).toHaveProperty('justification')
+
+    setSandboxMode(active, 'workspace-write')
+    const workspace = await propertiesOf(ctx, active)
+    expect(workspace['sandbox_permissions']).toMatchObject({ enum: ['workspace-write', 'danger-full-access'] })
+    expect(workspace).toHaveProperty('justification')
+
+    setSandboxMode(active, 'danger-full-access')
+    const unrestricted = await propertiesOf(ctx, active)
+    expect(unrestricted['sandbox_permissions']).toMatchObject({ enum: ['danger-full-access'] })
+    expect(unrestricted).toHaveProperty('justification')
+  })
+
+  it('leaves agentless catalogs and unrelated tool schemas unchanged', async () => {
+    const ctx = await schemaMounted()
+    const agentless = await ctx.systemPrompt.assemble()
+    const mutate = agentless.tools.find(tool => tool.name === 'mutate')!
+    const inspect = agentless.tools.find(tool => tool.name === 'inspect')!
+
+    expect((mutate.parameters['properties'] as Record<string, unknown>)['sandbox_permissions'])
+      .toMatchObject({ enum: ['read-only', 'workspace-write', 'danger-full-access'] })
+    expect(inspect.parameters).toEqual({
+      type: 'object',
+      properties: { path: { type: 'string' } },
+      required: ['path'],
+      additionalProperties: false,
+    })
+  })
+
+  it('removes schema projection with the policy plugin fiber', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    const fiber = await ctx.plugin(SandboxPolicyService, {})
+    ctx.systemPrompt.tools(() => ({
+      schemas: [{
+        name: 'mutate',
+        description: 'test mutation',
+        parameters: {
+          type: 'object',
+          properties: {
+            sandbox_permissions: { type: 'string', enum: ['read-only', 'workspace-write', 'danger-full-access'] },
+            justification: { type: 'string' },
+          },
+        },
+      }],
+    }))
+    const active = session('sess-schema-hmr')
+    setSandboxMode(active, 'danger-full-access')
+
+    expect((await propertiesOf(ctx, active))['sandbox_permissions'])
+      .toMatchObject({ enum: ['danger-full-access'] })
+    await fiber.dispose()
+    expect((await propertiesOf(ctx, active))['sandbox_permissions'])
+      .toMatchObject({ enum: ['read-only', 'workspace-write', 'danger-full-access'] })
+  })
+
+  it('leaves tool schemas without the paired escalation fields untouched', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(SandboxPolicyService, {})
+    ctx.systemPrompt.tools(() => ({
+      schemas: [{
+        name: 'string-properties',
+        description: 'parameters without a properties object',
+        parameters: { type: 'object', properties: 'not-a-record' },
+      }, {
+        name: 'typed-permissions',
+        description: 'sandbox_permissions that is not a string schema',
+        parameters: {
+          type: 'object',
+          properties: {
+            sandbox_permissions: { type: 'number' },
+            justification: { type: 'string' },
+          },
+        },
+      }, {
+        name: 'missing-justification',
+        description: 'sandbox_permissions without a justification sibling',
+        parameters: {
+          type: 'object',
+          properties: { sandbox_permissions: { type: 'string' } },
+        },
+      }],
+    }))
+    const active = session('sess-schema-foreign')
+    setSandboxMode(active, 'danger-full-access')
+
+    const assembly = await ctx.systemPrompt.assemble({ agent: agentFor(active) })
+    const byName = (name: string) => assembly.tools.find(tool => tool.name === name)!.parameters['properties']
+    expect(byName('string-properties')).toBe('not-a-record')
+    expect(byName('typed-permissions')).toEqual({
+      sandbox_permissions: { type: 'number' },
+      justification: { type: 'string' },
+    })
+    expect(byName('missing-justification')).toEqual({
+      sandbox_permissions: { type: 'string' },
+    })
+  })
+})
+
 describe('the sandbox/mode session kit', () => {
   it('SANDBOX_MODES lists every mode for advertisement and validation', () => {
     expect(SANDBOX_MODES).toEqual(['read-only', 'workspace-write', 'danger-full-access'])
