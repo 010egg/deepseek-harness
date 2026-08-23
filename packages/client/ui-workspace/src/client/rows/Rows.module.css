@@ -144,6 +144,22 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.colorfulRunningDot rect:nth-child(4n + 1) {
+  fill: var(--dsw-alias-state-success-primary);
+}
+
+.colorfulRunningDot rect:nth-child(4n + 2) {
+  fill: var(--dsw-alias-state-business-primary);
+}
+
+.colorfulRunningDot rect:nth-child(4n + 3) {
+  fill: var(--dsw-alias-state-warn-primary);
+}
+
+.colorfulRunningDot rect:nth-child(4n) {
+  fill: var(--dsw-alias-state-error-primary);
+}
+
 .visuallyHidden {
   position: absolute;
   width: 1px;
@@ -362,4 +378,5 @@
     animation: none;
     transition: none;
   }
+
 }

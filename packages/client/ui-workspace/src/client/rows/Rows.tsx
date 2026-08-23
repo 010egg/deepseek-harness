@@ -274,11 +274,18 @@ function sessionStatuses(
   return [{ state: 'done', label: t('status.idle') }]
 }
 
+/** Preserve the original chase; only sidebar ongoing dots receive local colors. */
+function SessionStatusIndicator({ state }: { state: StateDotState }) {
+  return state === 'ongoing'
+    ? <StateDot state={state} className={css.colorfulRunningDot} />
+    : <StateDot state={state} />
+}
+
 /** Primary status dot plus every status's screen-reader label, shared by the search and session rows. */
 function SessionStatusDots({ statuses }: { statuses: readonly [SessionStatus, ...SessionStatus[]] }) {
   return (
     <>
-      <StateDot state={statuses[0].state} />
+      <SessionStatusIndicator state={statuses[0].state} />
       {statuses.map(status => (
         <span className={css.visuallyHidden} key={status.label}>{status.label}</span>
       ))}

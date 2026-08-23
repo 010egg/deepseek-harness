@@ -95,8 +95,8 @@ function validatePwshArgs(args: PwshToolArgs): void {
     throw new Error(`invalid timeoutMs: expected a positive number, got ${JSON.stringify(args.timeoutMs)}`)
   }
   // The escalation pairing (sandbox_permissions ⇔ justification, non-empty) is
-  // the shared rule both enforcing families validate identically.
-  validateEscalationArgs(args.sandbox_permissions, args.justification)
+  // the shared rule both enforcing families validate identically. Enforced in
+  // execute() so an equal-mode request needs no justification.
 }
 /* jscpd:ignore-end */
 
@@ -209,8 +209,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's escalation resolver (pwsh-tool-and-executor Agent Note). */
   /**
    * Resolve a sandbox-escalation request through `ctx.approval` BEFORE
-   * anything executes, delegating the shared fail-closed sequence (strict
-   * widening, channel resolution, outcome mapping) to
+    * anything executes, delegating the shared mode judgment (equal-mode
+    * passthrough, strict widening, channel resolution, outcome mapping) to
    * {@link approveEscalation}. This tool contributes only the composition
    * guard (the fields are unadvertised without a sandboxing executor, yet
    * schema validation checks advertised keys only, so an unadvertised
@@ -271,11 +271,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         sandbox_permissions: {
           type: 'string' as const,
           enum: [...escalationModes],
-          description: 'The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval.',
+          description: 'Sandbox mode for this call. Use the current standing mode only when the schema requires a value; use a wider mode only for a one-shot retry of a command the sandbox just denied.',
         },
         justification: {
           type: 'string' as const,
-          description: 'Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access.',
+          description: 'Required with sandbox_permissions. For a wider retry, explain in one sentence why this exact command needs the access.',
         },
       } : {},
     },
@@ -347,8 +347,19 @@ export function apply(ctx: Context, config: Config = {}): void {
     /* jscpd:ignore-start -- the execute path mirrors dsh-tool-bash's by design (see the pwsh-tool-and-executor Agent Note). */
     async execute(args: PwshToolArgs, exec) {
       validatePwshArgs(args)
-      // Description is display metadata; workdir defaults to the caller's session.
+      // The escalation pairing (sandbox_permissions ⇔ justification) is the
+      // shared rule both enforcing families validate identically — enforced
+      // here so an equal-mode request, an ordinary call under provider
+      // dialects that force advertised properties, needs no justification,
+      // while any wider request still must pair.
       const standingPolicy = resolveSandboxPolicy(exec)
+      if (args.sandbox_permissions !== undefined && standingPolicy !== undefined
+        && args.sandbox_permissions === standingPolicy.mode) {
+        // Ordinary call: no escalation, no justification.
+      } else {
+        validateEscalationArgs(args.sandbox_permissions, args.justification)
+      }
+      // Description is display metadata; workdir defaults to the caller's session.
       const approvedMode = args.sandbox_permissions !== undefined && args.justification !== undefined
         ? await approvePwshEscalation(args.sandbox_permissions, args.justification, exec, standingPolicy)
         : undefined

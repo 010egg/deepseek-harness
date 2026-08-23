@@ -10,7 +10,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { canonicalPath } from '@deepseek-ai/dsh-sandbox'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { EpochHeader, SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   assertFixtureInventory, fixtureUserPrompts, launchWebScaffold, recordFixture,
   watchConsole, webSnapshotMode, type WebScaffold,
@@ -35,6 +35,16 @@ function requestSystems(events: readonly SessionEvent[]): string[] {
     if (event.type !== 'request/header') return []
     return typeof event.data.header.system === 'string' ? [event.data.header.system] : []
   })
+}
+
+function requestHeaders(events: readonly SessionEvent[]): EpochHeader[] {
+  return events.flatMap(event => event.type === 'request/header' ? [event.data.header] : [])
+}
+
+function sandboxModes(header: EpochHeader, toolName: string): string[] {
+  const tool = header.tools?.find(entry => entry.name === toolName)
+  const properties = tool?.parameters['properties'] as Record<string, { enum?: string[] }> | undefined
+  return properties?.['sandbox_permissions']?.enum ?? []
 }
 
 function runtimeContexts(events: readonly SessionEvent[]): string[] {
@@ -122,8 +132,24 @@ describe('web e2e: current sandbox policy reaches the model before tools', () =>
   }, 240_000)
 
   it.skipIf(MODE === 'record')('records cache-safe current policy before the corresponding model behavior', async () => {
+    const headers = requestHeaders(sessionEvents)
+    expect(headers).toHaveLength(4)
+    // Each mode switch changes the assembled escalation enum, so every model
+    // call appends its own header; the enum is the effective mode plus every
+    // strictly wider retry for each sandbox-capable tool.
+    const expectedModes = [
+      ['read-only', 'workspace-write', 'danger-full-access'],
+      ['danger-full-access'],
+      ['workspace-write', 'danger-full-access'],
+      ['read-only', 'workspace-write', 'danger-full-access'],
+    ]
+    for (const toolName of ['bash', 'write', 'edit']) {
+      expect(headers.map(header => sandboxModes(header, toolName))).toEqual(expectedModes)
+    }
+
     const systems = requestSystems(sessionEvents)
-    expect(systems).toHaveLength(1)
+    expect(systems).toHaveLength(4)
+    expect(new Set(systems)).toHaveLength(1)
     expect(systems[0]).not.toContain('Current DSH file policy:')
     expect(systems[0]).not.toContain('Approval policy:')
     expect(systems[0]).not.toContain('Approval prompts are disabled in this session')

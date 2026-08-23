@@ -556,7 +556,7 @@ describe('sandbox escalation through ctx.approval', () => {
     const { ctx } = await setupSandboxed()
     const schema = ctx.tools.schemas().find(item => item.name === 'pwsh')!
     const properties = schema.parameters.properties as Record<string, { enum?: string[] }>
-    expect(properties['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
+    expect(properties['sandbox_permissions']?.enum).toEqual(['read-only', 'workspace-write', 'danger-full-access'])
     expect(schema.description).toContain('approval prompt')
     expect(schema.description).toContain('ConstrainedLanguage')
     expect(schema.description).toContain('workspace-write stays in FullLanguage')
@@ -572,6 +572,24 @@ describe('sandbox escalation through ctx.approval', () => {
     }
   })
 
+  it('runs an equal-mode request without justification as an ordinary call', async () => {
+    const { ctx, bash } = await setupSandboxed()
+    const agent = sandboxAgent('workspace-write')
+    const equal = await call(ctx, 'pwsh', {
+      command: 'Write-Output ok', description: 'equal mode without justification',
+      sandbox_permissions: 'workspace-write',
+    }, agent)
+    expect(equal.isError).toBe(false)
+    expect(bash.modes).toEqual(['workspace-write'])
+
+    // A wider request without justification still fails the pairing check.
+    const wider = await call(ctx, 'pwsh', {
+      command: 'Write-Output ok', description: 'wider mode without justification',
+      sandbox_permissions: 'danger-full-access',
+    }, agent)
+    expect(text(wider)).toContain('requires a justification')
+  })
+
   it('the escalation fields and the confined-mode clauses stay out of sandbox-less compositions', async () => {
     const { ctx } = await setup()
     const schema = ctx.tools.schemas().find(item => item.name === 'pwsh')!
@@ -581,16 +599,19 @@ describe('sandbox escalation through ctx.approval', () => {
     expect(schema.parameters.properties).not.toHaveProperty('sandbox_permissions')
   })
 
-  it('rejects injected escalation without a sandbox and non-widening escalation without prompting', async () => {
+  it('rejects injected escalation without a sandbox, passes through equal mode, and rejects narrower mode', async () => {
     const plain = await setup()
     expect(text(await call(plain.ctx, 'pwsh', escalate))).toContain('not available in this composition')
 
     const { ctx } = await setupSandboxed(true)
     const prompted = vi.fn()
     ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
-    const result = await call(ctx, 'pwsh', { ...escalate, sandbox_permissions: 'workspace-write' }, sandboxAgent('workspace-write'))
-    expect(text(result)).toContain('not strictly wider')
+    const equal = await call(ctx, 'pwsh', { ...escalate, sandbox_permissions: 'workspace-write' }, sandboxAgent('workspace-write'))
+    expect(equal.isError).toBe(false)
     expect(prompted).not.toHaveBeenCalled()
+
+    const narrower = await call(ctx, 'pwsh', { ...escalate, sandbox_permissions: 'workspace-write' }, sandboxAgent('danger-full-access'))
+    expect(text(narrower)).toContain('not strictly wider')
 
     const malformed = sandboxAgent()
     ;(malformed.session.events as unknown as Array<{ type: string; data: { mode: string } }>).push({

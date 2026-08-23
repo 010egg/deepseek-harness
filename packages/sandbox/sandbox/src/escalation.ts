@@ -1,11 +1,12 @@
 /**
  * The escalation vocabulary and choreography shared by every sandbox-enforcing
  * tool family (`@deepseek-ai/dsh-tool-bash`, `@deepseek-ai/dsh-tool-fs`): the
- * strictly-wider ladder, the argument-pairing validation, the model-facing
+ * mode ladder, the argument-pairing validation, the model-facing
  * denial/hint markers, and {@link approveEscalation} — the ordered fail-closed
- * sequence that resolves a `sandbox_permissions` request through a
- * user-approval channel BEFORE anything executes. One home keeps the two
- * families' approval ordering and verbatim error texts from drifting apart.
+ * sequence that treats the standing mode as an ordinary call and resolves a
+ * wider `sandbox_permissions` request through a user-approval channel BEFORE
+ * anything executes. One home keeps the tool families' approval ordering and
+ * verbatim error texts from drifting apart.
  *
  * The channel is a minimal STRUCTURAL function shape ({@link EscalationAsk}),
  * not the approval service type: the tool layer — which owns the agent, the
@@ -21,9 +22,9 @@ import type { SandboxMode } from './index.ts'
 
 /**
  * The strictly-wider table: what a call whose effective mode is the key may
- * escalate TO. Checked at EXECUTION, never baked into a tool schema — the
- * schema's enum is {@link ESCALATION_TARGETS}, because schemas are
- * registry-global while the effective mode is per-call truth.
+ * escalate TO. Execution checks this table; request assembly narrows the
+ * registry-global {@link ESCALATION_TARGETS} enum to the current mode plus
+ * these wider targets.
  */
 export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
   'read-only': ['workspace-write', 'danger-full-access'],
@@ -31,14 +32,13 @@ export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
 }
 
 /**
- * The closed escalation-target vocabulary — every mode a call could ever
- * escalate TO (`read-only` is the floor; nothing escalates to it). Advertised
- * whenever the mounted capability confines: cutting the enum down to the modes
- * wider than the composition's DEFAULT would strand a session whose effective
- * mode sits below it (a `danger-full-access` default would advertise nothing
- * while a narrower-switched session stays confined with no lever).
+ * The closed `sandbox_permissions` argument vocabulary. It includes the
+ * standing mode because some provider schema dialects require every advertised
+ * property; an equal request is an ordinary call and never prompts. The policy
+ * owner removes narrower modes from each agent request, while execution rejects
+ * any injected narrower or unknown value.
  */
-export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'danger-full-access']
+export const ESCALATION_TARGETS: readonly SandboxMode[] = ['read-only', 'workspace-write', 'danger-full-access']
 
 /**
  * Validate the escalation argument pairing a tool schema cannot express:
@@ -130,35 +130,30 @@ export interface EscalationApproval<A = object, C = string> {
 
 /** One escalation request, as {@link approveEscalation} judges it. */
 export interface EscalationRequest {
-  /** The requested target mode (schema-pinned to {@link ESCALATION_TARGETS} when advertised). */
+  /** Requested mode: the standing mode for an ordinary call, or a wider approved retry. */
   requestedMode: string
   /** The model's one-sentence reason, shown verbatim to the user inside the audit reason. */
   justification: string
-  /** The call's effective mode (session override ?? composition default) the request must strictly widen. */
+  /** The call's effective mode (session override ?? composition default). */
   effectiveMode: SandboxMode
   /** The family's noun for the escalated action in user-facing texts (`command` for bash, `operation` for fs). */
   subject: string
 }
 
 /**
- * Resolve a sandbox-escalation request BEFORE anything executes: check strict
- * widening against the call's effective mode, then resolve the approval
- * channel, then map every outcome — the ordered fail-closed sequence both
- * enforcing families share. Returns the granted mode to stamp onto exactly
- * this call; throws the distinct verbatim text for every other path (a
- * non-widening request, a missing approval service, an agent-less execution,
- * a rejection, a cancellation, an unanswerable ask) — the tool registry turns
- * the throw into the call's isError result, and nothing has run. A
- * non-widening request never prompts a human.
- * @param request - the escalation to judge (see {@link EscalationRequest}).
+ * Resolve a sandbox mode request BEFORE anything executes. An equal request
+ * returns the standing mode without consulting approval, which lets providers
+ * that require optional schema properties issue an ordinary call. A strictly
+ * wider request resolves approval and stamps the grant onto exactly this call.
+ * Narrower or unknown modes, missing approval context, and every non-grant
+ * outcome fail before execution.
+ * @param request - the mode request to judge (see {@link EscalationRequest}).
  * @param approval - the approval ingredients the tool holds (see {@link EscalationApproval}).
  * @returns the granted mode, consumed by the one call that asked.
  */
 export async function approveEscalation<A, C>(request: EscalationRequest, approval: EscalationApproval<A, C>): Promise<SandboxMode> {
   const { requestedMode: mode, effectiveMode, justification, subject } = request
-  // Strict widening is an EXECUTION check against the call's effective mode —
-  // deliberately not a schema constraint (the enum is the closed target
-  // vocabulary; the effective mode is per-call truth).
+  if (mode === effectiveMode) return effectiveMode
   if (!(WIDER_MODES[effectiveMode] ?? []).includes(mode as SandboxMode)) {
     throw new Error(`sandbox escalation to "${mode}" is not strictly wider than this call's current "${effectiveMode}" mode`)
   }
@@ -178,8 +173,8 @@ export async function approveEscalation<A, C>(request: EscalationRequest, approv
     ...approval.signal ? { signal: approval.signal } : {},
   })
   switch (outcome) {
-    // The schema enum already pinned `mode` to the closed target vocabulary;
-    // the check above proved it is strictly wider.
+    // The registry schema pins `mode` to the closed argument vocabulary; the
+    // check above proved this request is strictly wider.
     case 'allowed-once': return mode as SandboxMode
     case 'rejected': throw new Error(`the user rejected escalating this ${subject} to "${mode}"`)
     case 'cancelled': throw new Error(`approval for escalating to "${mode}" was cancelled`)

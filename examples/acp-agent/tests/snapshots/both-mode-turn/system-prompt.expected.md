@@ -50,9 +50,9 @@ interface ToolArgsMap {
     workdir?: string;
     /** Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies. */
     run_in_background?: boolean;
-    /** The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval. */
-    sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. */
+    /** Sandbox mode for this call. Use the current standing mode only when the schema requires a value; use a wider mode only for a one-shot retry of a command the sandbox just denied. */
+    sandbox_permissions?: "read-only" | "workspace-write" | "danger-full-access";
+    /** Required with sandbox_permissions. For a wider retry, explain in one sentence why this exact command needs the access. */
     justification?: string;
   } & Record<string, JsonValue>;
   /** Create one persisted same-session completion goal when the current direct human request is a long-running objective that should continue across autonomous goal rounds. You may infer that intent without requiring the user to say "create a goal". Do not use this for trivial single-turn work. Execution rejects non-human and subagent authority. */
@@ -72,9 +72,9 @@ interface ToolArgsMap {
     new_string: string;
     /** Replace all matches. Defaults to false; when false, old_string must appear exactly once. */
     replace_all?: boolean;
-    /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
-    sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
+    /** Sandbox mode for this call. Use the current standing mode only when the schema requires a value; use a wider mode only for a one-shot retry of an operation the sandbox just denied. */
+    sandbox_permissions?: "read-only" | "workspace-write" | "danger-full-access";
+    /** Required with sandbox_permissions. For a wider retry, explain in one sentence why this exact file operation needs the access. */
     justification?: string;
   } & Record<string, JsonValue>;
   /** Read the current same-session goal, including its exact id/revision, objective, phase, completed continuation rounds, round limit, blocker reason when present, and whether another continuation is armed. Call this before updating a goal. */
@@ -209,9 +209,9 @@ interface ToolArgsMap {
     file_path: string;
     /** Full UTF-8 text content to write. */
     content: string;
-    /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
-    sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
+    /** Sandbox mode for this call. Use the current standing mode only when the schema requires a value; use a wider mode only for a one-shot retry of an operation the sandbox just denied. */
+    sandbox_permissions?: "read-only" | "workspace-write" | "danger-full-access";
+    /** Required with sandbox_permissions. For a wider retry, explain in one sentence why this exact file operation needs the access. */
     justification?: string;
   } & Record<string, JsonValue>;
 }

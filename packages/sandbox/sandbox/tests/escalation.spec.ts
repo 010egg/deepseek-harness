@@ -24,8 +24,8 @@ describe('the strictly-wider ladder', () => {
     expect(WIDER_MODES['danger-full-access']).toBeUndefined()
   })
 
-  it('the target enum is the closed set every session could escalate TO (read-only is the floor)', () => {
-    expect(ESCALATION_TARGETS).toEqual(['workspace-write', 'danger-full-access'])
+  it('the argument enum accepts every standing mode or wider target', () => {
+    expect(ESCALATION_TARGETS).toEqual(['read-only', 'workspace-write', 'danger-full-access'])
   })
 })
 
@@ -81,12 +81,23 @@ describe('approveEscalation', () => {
     expect(seen[0]?.reason).toBe('escalate sandbox to workspace-write: the user asked to write in the workspace')
   })
 
-  it('a non-widening request fails closed with its own text and never asks', async () => {
+  it.each(['read-only', 'workspace-write', 'danger-full-access'] as const)(
+    'an equal %s request returns the standing mode without approval',
+    async (mode) => {
+      const granted = await approveEscalation(
+        req({ requestedMode: mode, effectiveMode: mode }),
+        ingredients({ approver: undefined, agent: undefined }),
+      )
+      expect(granted).toBe(mode)
+    },
+  )
+
+  it('a narrower or unknown request fails closed with its own text and never asks', async () => {
     const seen: unknown[] = []
     const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
-    await expect(approveEscalation(req({ requestedMode: 'read-only' }), spy))
-      .rejects.toThrow(/not strictly wider than this call's current "read-only" mode/)
     await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'danger-full-access' as never }), spy))
+      .rejects.toThrow(/not strictly wider/)
+    await expect(approveEscalation(req({ requestedMode: 'unknown-mode' }), spy))
       .rejects.toThrow(/not strictly wider/)
     expect(seen).toEqual([])
   })

@@ -156,9 +156,9 @@ interface ToolArgsMap {
     workdir?: string;
     /** Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies. */
     run_in_background?: boolean;
-    /** The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval. */
-    sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. */
+    /** Sandbox mode for this call. Use the current standing mode only when the schema requires a value; use a wider mode only for a one-shot retry of a command the sandbox just denied. */
+    sandbox_permissions?: "read-only" | "workspace-write" | "danger-full-access";
+    /** Required with sandbox_permissions. For a wider retry, explain in one sentence why this exact command needs the access. */
     justification?: string;
   } & Record<string, JsonValue>;
   /** Define an immutable Cordis Package. For a new Plugin, use kind:"new" and provide only a semantic prefix of 3–6 lowercase English letters; the Host returns the final pluginId and packageId. To modify an existing Plugin, use kind:"existing" with its exact pluginId to append a Package without overwriting older versions. Provide at least one of code.host and code.client. Each value is a plain JavaScript function body that returns a Cordis Plugin; no TypeScript, JSX, or import transformation occurs. Query Inspect before depending on a Service, Event, Builtin, Slot, or token. Define only validates parameters and syntax and records source: it does not request approval, execute apply, or change currentPackageId. On success, call cordis_run with the returned IDs. */
@@ -239,9 +239,9 @@ interface ToolArgsMap {
     new_string: string;
     /** Replace all matches. Defaults to false; when false, old_string must appear exactly once. */
     replace_all?: boolean;
-    /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
-    sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
+    /** Sandbox mode for this call. Use the current standing mode only when the schema requires a value; use a wider mode only for a one-shot retry of an operation the sandbox just denied. */
+    sandbox_permissions?: "read-only" | "workspace-write" | "danger-full-access";
+    /** Required with sandbox_permissions. For a wider retry, explain in one sentence why this exact file operation needs the access. */
     justification?: string;
   } & Record<string, JsonValue>;
   /** Read the current same-session goal, including its exact id/revision, objective, phase, completed continuation rounds, round limit, blocker reason when present, and whether another continuation is armed. Call this before updating a goal. */
@@ -376,9 +376,9 @@ interface ToolArgsMap {
     file_path: string;
     /** Full UTF-8 text content to write. */
     content: string;
-    /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
-    sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
+    /** Sandbox mode for this call. Use the current standing mode only when the schema requires a value; use a wider mode only for a one-shot retry of an operation the sandbox just denied. */
+    sandbox_permissions?: "read-only" | "workspace-write" | "danger-full-access";
+    /** Required with sandbox_permissions. For a wider retry, explain in one sentence why this exact file operation needs the access. */
     justification?: string;
   } & Record<string, JsonValue>;
 }
