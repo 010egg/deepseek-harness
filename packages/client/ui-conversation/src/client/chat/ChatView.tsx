@@ -13,13 +13,15 @@
 // ChatNodeSeat subscribes to one Node key, so Assistant deltas and Tool
 // lifecycle updates replace only their own row without remounting it.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { TurnFoldRow } from './TurnFoldRow.tsx'
 import { formatRunDuration } from './message-chrome.ts'
+import { planChatFlow, sameChatFlowPlan } from './turn-folds.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
@@ -161,6 +163,10 @@ export function ChatView({
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
+  // Flow plan: which rows render in place and which collapse into a Turn fold.
+  // The equality compares the plan's own signature, so a streamed delta that
+  // changes no row identity or fold summary leaves this view unrendered.
+  const flow = useSession(s => planChatFlow(s.chat), sameChatFlowPlan)
   const timeline = useSession(s => s.chat.timeline)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
@@ -311,6 +317,24 @@ export function ChatView({
     if (appendedUser || appendedSteering || (tipMoved && atBottomRef.current)) toBottom(el)
   })
 
+  // One row's seat: the fold wrapper reuses this for the rows it owns.
+  const renderSeat = (nodeKey: string): ReactNode => (
+    <ChatNodeSeat
+      key={nodeKey}
+      nodeKey={nodeKey}
+      useSession={useSession}
+      selectedCallId={selectedCallId}
+      cwd={cwd}
+      openFile={requestOpenFile}
+      inspectCall={inspectCall}
+      forkAt={forkAt}
+      renderMessageImages={renderMessageImages}
+      fileMentions={fileMentions}
+      renderSlot={renderSlot}
+      t={t}
+    />
+  )
+
   const onScrollRef = useRef(() => {})
   onScrollRef.current = () => {
     const local = listRef.current
@@ -429,22 +453,13 @@ export function ChatView({
               </button>
             </div>
           )}
-          {order.map(nodeKey => (
-            <ChatNodeSeat
-              key={nodeKey}
-              nodeKey={nodeKey}
-              useSession={useSession}
-              selectedCallId={selectedCallId}
-              cwd={cwd}
-              openFile={requestOpenFile}
-              inspectCall={inspectCall}
-              forkAt={forkAt}
-              renderMessageImages={renderMessageImages}
-              fileMentions={fileMentions}
-              renderSlot={renderSlot}
-              t={t}
-            />
-          ))}
+          {flow.rows.map(row => row.kind === 'node'
+            ? renderSeat(row.key)
+            : (
+              <TurnFoldRow key={row.fold.id} fold={row.fold} t={t}>
+                {row.fold.keys.map(renderSeat)}
+              </TurnFoldRow>
+            ))}
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would
               double-render the same wait. */}

@@ -1,0 +1,99 @@
+/* One Turn's folded process rows: a single muted summary line that expands
+   into the steps it owns. Folded rows keep the flow column's own rhythm (a
+   16px gap) and sit one indent behind their header. */
+
+.fold {
+  min-width: 0;
+}
+
+/* Header: the whole line is the control, with a hover surface wide enough to
+   read as one without breaking the column's text edge. */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% + 16px);
+  margin: -4px -8px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.head:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.head:hover .label {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.head:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.chevron {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.label {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+}
+
+.summary {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 12px 0 0 4px;
+  padding-left: 12px;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* A running fold says so in its header, so a folded live Turn still reads as
+   in progress; a static dot carries the same fact under reduced motion. */
+.label[data-running]::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-brand-primary);
+  animation: dsh-turn-fold-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes dsh-turn-fold-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .label[data-running]::after {
+    opacity: 1;
+    animation: none;
+  }
+}

@@ -117,6 +117,10 @@ const toolResult = (seq: number, callId: string, name = 'bash'): ToolResultNode 
   callTime: seq * 1_000 - 500,
   content: [], isError: false, callView: null, resultView: null, subCalls: [],
 })
+/** A settled Tool row placed in a Turn: the fixture reads `turn` off the node
+ *  to resolve its location, a field the legacy node type does not declare. */
+const toolCallIn = (seq: number, callId: string, turn: number): ConversationNode =>
+  ({ ...toolResult(seq, callId), turn } as unknown as ConversationNode)
 const runningCall = (callId: string, name = 'bash'): RunningToolCall => ({
   callId, name, argsRaw: `{"command":"cmd-${callId}"}`, turn: 2, step: 1, time: 1_000, callView: null, subCalls: [],
 })
@@ -443,6 +447,64 @@ describe('ChatView', () => {
         'fixture:user:1', 'fixture:assistant:2',
         'fixture:tool:a', 'call:a', 'fixture:tool:b', 'call:b',
       ])
+  })
+
+  it('folds a settled turn\'s steps behind one header and keeps the answer in place', () => {
+    const h = makeHarness({
+      nodes: [
+        user(1, 'do the thing'),
+        assistant(2, 'looking around', 1),
+        toolCallIn(3, 'a', 1),
+        assistant(4, 'the answer', 1),
+      ],
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 61_000 }]]),
+      turnEnds: new Map([[1, 5]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const fold = view.container.querySelector('[data-chat-flow-kind="turn-fold"]')
+    expect(fold).toBeTruthy()
+    // A settled Turn arrives folded: its rows are not mounted at all.
+    expect(fold?.getAttribute('data-fold-open')).toBeNull()
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    // The answer and the user's own message stay in the flow.
+    expect(view.getByText('the answer')).toBeTruthy()
+    expect(view.getByText('do the thing')).toBeTruthy()
+    expect(fold?.textContent).toContain('过程')
+    expect(fold?.textContent).toContain('命令 1')
+    expect(fold?.textContent).toContain('1分00秒')
+    const toggle = within(fold as HTMLElement).getByRole('button', { name: '展开过程' })
+    fireEvent.click(toggle)
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(within(fold as HTMLElement).getByRole('button', { name: '收起过程' }).getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('keeps a running turn\'s fold open, so its work stays visible while it happens', () => {
+    const h = makeHarness({
+      nodes: [
+        user(1, 'go'),
+        toolCallIn(2, 'a', 1),
+        toolCallIn(3, 'b', 1),
+        assistant(4, 'partial answer', 1),
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const fold = view.container.querySelector('[data-chat-flow-kind="turn-fold"]') as HTMLElement
+    expect(fold.getAttribute('data-fold-open')).toBe('true')
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-b')).toBeTruthy()
+    // A reader who folds it during the run keeps that choice.
+    fireEvent.click(within(fold).getByRole('button', { name: '收起过程' }))
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    act(() => { h.set({ nodes: [
+      user(1, 'go'),
+      toolCallIn(2, 'a', 1),
+      toolCallIn(3, 'b', 1),
+      toolCallIn(5, 'c', 1),
+      assistant(6, 'partial answer', 1),
+    ] }) })
+    // The fold grew a row; the reader's collapse still owns this Turn.
+    expect(view.queryByTestId('tool-seat-c')).toBeNull()
+    expect(view.getByText('partial answer')).toBeTruthy()
   })
 
   it('renders Host-pending steering at the flow tail and hands off to the durable node', () => {
